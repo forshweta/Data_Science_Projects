@@ -1,0 +1,219 @@
+---
+title: "Untitled"
+author: "shweta"
+date: "25/07/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+## READ THE TIME SERIES AND VISUALISE IT
+rm(list=ls())
+gc()
+library(forecast)
+library('ggplot2')
+library('tseries')
+library('MLmetrics')
+library(stats)
+#data<- forecast::gas
+data(gas)
+plot(gas)
+summary(gas)
+any(is.na(gas))
+head(data)
+??forecast::gas
+#par(mar=c(1,1,1,1))
+par(mfrow=c(1,1), mar=c(2, 2, 2, 2), mgp=c(3, 1, 0), las=0)
+graphics.off() 
+plot(gas)
+str(gas)
+gas_ts = ts(gas, start = c(1956,1),frequency = 12)
+gas_ts2 = ts(gas, start = c(1970,1), end = c(1995,8), frequency = 12)
+seasonplot(gas)
+tsdisplay(gas)
+plot(gas_ts)
+plot(gas_ts2)
+#par(mar=c(1,1,1,1))
+monthplot(gas_ts2)
+summary(gas_ts2)
+cycle(gas_ts)
+par(mfrow=c(1,1), mar=c(2, 2, 2, 2), mgp=c(3, 1, 0), las=0)
+boxplot(gas_ts ~cycle(gas_ts))
+
+```
+
+
+```{r}
+
+## CHECK VARIOUS COMPONENTS OF TIME SERIES, CHECK THE IMPACT OF SEASONALITY VERSUS TREND
+
+#decomposed_data = decompose(gas_ts, type='additive')
+#plot(decomposed_data)
+#plot(decomposed_data$seasonal)
+#decomp = stl(gas_ts, s.window = "periodic")
+decomp = stl(gas_ts, s.window = 7)
+#decomp2 = stl(gas_ts2, s.window = "periodic")
+decomp2 = stl(gas_ts2, s.window = 5)
+
+plot(decomp)
+plot(decomp2)
+
+decomp2$time.series
+#Adding the Trend & Reminder to deseanalise
+
+
+Deseason_gas = (decomp2$time.series[,2] + decomp2$time.series[,3])
+
+ts.plot(gas_ts2, Deseason_gas, col=c("red", "blue"), main="Gas Production vs De seasoned Gas Production")
+
+
+#deseasonal_gas=seasadj(decomp)
+#deseasonal_gas2=seasadj(decomp2)
+
+```
+
+
+
+```{r}
+## TEST FOR THE STATIONARITY IN TIME SERIES
+
+library(aTSA)
+tseries::adf.test(gas_ts2) # TIME SERIES IS NON STATIONARY
+#STATIONARISE IT
+gas_diff = diff(gas_ts2)
+adf.test(gas_diff)
+```
+
+```{r}
+## ACF AND PACF PLOTS
+acf(gas_diff, lag = 25)
+pacf(gas_diff, lag = 25)
+gas
+
+# REMOVE SEASONALITY FROM THE STATIONARISED TIME SERIES
+#decomp3 = stl(gas_diff, s.window = 7)
+#Deseason_gas2 = (decomp3$time.series[,2] + decomp3$time.series[,3])
+#ts.plot(gas_diff, Deseason_gas2, col=c("red", "blue"), main="Gas production vs De seasoned production")
+```
+
+
+
+```{r}
+##SPLIT THE DATA IN TRAIN AND TEST
+gasTStrain = window(Deseason_gas, start=1970, end=c(1993,12))
+gasTStest= window(Deseason_gas, start=1994)
+
+```
+
+
+```{r}
+## MODEL BUILDING ARIMA
+gasARIMA = arima(gasTStrain, order=c(6,2,2))
+gasARIMA
+par(mfrow=c(1,1), mar=c(2, 2, 2, 2), mgp=c(3, 1, 0), las=0)
+plot(gasARIMA$x,col="blue") 
+lines(gasARIMA$fitted,col="red",main="Actual vs Forecast")
+
+
+
+# EVALUATION MEASURES
+tsdisplay(residuals(gasARIMA), lag.max=15, main='Model Residuals')
+#Box-Ljung test:
+#H0: Residuals are Independent
+#Ha: Residuals are not Independent
+Box.test(gasARIMA$residuals)
+
+
+#FORECAST
+
+Arimafcast <- forecast::forecast(gasARIMA, h=20) 
+plot(Arimafcast)
+VecA2 <- cbind(gasTStest,Arimafcast)
+par(mfrow=c(1,1), mar=c(2, 2, 2, 2), mgp=c(3, 1, 0), las=0)
+ts.plot(VecA2[,1],VecA2[,2], col=c("blue","red"),xlab="year", ylab="Production", main= "Actual vs Forecast")
+
+
+
+
+arima_mape = MAPE(VecA2[,1],VecA2[,2]) 
+arima_accuracy = accuracy(Arimafcast,gasTStest)
+
+```
+
+```{r}
+## MODEL BUILDING AUTO ARIMA
+gasAutoArima<-auto.arima(gasTStrain, seasonal=FALSE)
+gasAutoArima
+plot(gasAutoArima$x,col="blue") 
+lines(gasAutoArima$fitted,col="red",main="Actual vs Forecast")
+
+# EVALUATION MEASURES
+tsdisplay(residuals(gasAutoArima), lag.max=15, main='Model Residuals')
+#Box-Ljung test:
+#H0: Residuals are Independent
+#Ha: Residuals are not Independent
+
+Box.test(gasAutoArima$residuals)
+
+
+#FORECAST
+
+AutoArimafcast <- forecast::forecast(gasAutoArima, h=20) 
+plot(AutoArimafcast)
+VecA3 <- cbind(gasTStest,AutoArimafcast)
+par(mfrow=c(1,1), mar=c(2, 2, 2, 2), mgp=c(3, 1, 0), las=0)
+ts.plot(VecA3[,1],VecA3[,2], col=c("blue","red"),xlab="year", ylab="Production", main= "Actual vs Forecast")
+
+autoarima_mape = MAPE(VecA3[,1],VecA3[,2])
+autoarima_accuracy = accuracy(AutoArimafcast,gasTStest)
+
+```
+
+
+
+```{r}
+
+## HOLT WINTERS MODEL
+
+##SPLIT THE DATA IN TRAIN AND TEST
+gasTStrain2 = window(gas_ts2, start=1970, end=c(1993,12))
+gasTStest2= window(gas_ts2, start=1994)
+
+#MODEL
+fit_hw = HoltWinters(as.ts(gasTStrain2),seasonal="additive")
+fit_hw
+plot(fit_hw)
+
+
+# FORECAST
+
+hwBForecast <- forecast::forecast(fit_hw, h =20) 
+
+VecB1 <- cbind(gasTStest2,hwBForecast)
+par(mfrow=c(1,1), mar=c(2, 2, 2, 2), mgp=c(3, 1, 0), las=0)
+ts.plot(VecB1[,1],VecB1[,2], col=c("blue","red"),xlab="year", ylab="Production", main= "Actual vs Forecast")
+
+# EVALUATION MEASURES
+
+Box.test(hwBForecast$residuals, lag=20, type="Ljung-Box")
+
+hw_mape = MAPE(VecB1[,1],VecB1[,2]) 
+hw_acuracy = accuracy(hwBForecast,gasTStest2)
+```
+
+
+```{r}
+## SHORTISTING THE FINAL MODEL AND FORECASTING FOR FUTURE PERIODS
+
+#Evaluation_all = as.matrix(hw_mape,autoarima_mape,arima_mape)
+
+gasAutoArimafinal<-auto.arima(Deseason_gas, seasonal=FALSE)
+gasAutoArimafinal
+Box.test(gasAutoArimafinal$residuals)
+tsdisplay(residuals(gasAutoArimafinal), lag.max=15, main='Model Residuals')
+
+forecast_final =forecast::forecast(gasAutoArimafinal, h=12)
+plot(forecast_final)
+
+```
+

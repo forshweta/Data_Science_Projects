@@ -1,0 +1,594 @@
+---
+title: "predictive modeling project"
+author: "shweta"
+date: "18/05/2020"
+output: word_document
+---
+
+```{r}
+
+### Load the relevant libraries
+library(tidyverse)
+library(caret)
+library(reshape2)
+library(RColorBrewer)
+library(plyr)
+library(dplyr)
+library(EnvStats)
+
+```
+
+
+```{r}
+
+### Read the data
+library(readxl)
+setwd("/Users/shweta/Desktop/PGPBABI/PREDICTIVE MODELLING/PROJECT")
+getwd()
+data = read_excel("cellphone_2.xlsx")
+dim(data)
+```
+
+```{r}
+############# EDA on the data #############
+display.brewer.all()
+str(data)
+summary(data)
+
+## check for missing values
+colSums(is.na(data))
+
+#There are no missing values present in the data
+
+#Change the class of the catgeorical variables - only Churn for now
+
+names = c(1,3,4)
+
+data[,names] = lapply(data[,names],factor)
+str(data)
+
+# Checking # of unique values in each column
+sapply(data,function(x) length(unique(x)))
+
+#create a copy of data
+ data_copy = data
+
+##Checking our dependent variable - Churn
+prop.table(table(data$Churn))
+
+```
+
+```{r}
+###EDA Contd
+## check for outliers
+names(data)
+outlier_values_AccountWeeks <- boxplot.stats(data$AccountWeeks)$out
+outlier_values_DataUsage <- boxplot.stats(data$DataUsage)$out
+outlier_values_CustServCalls <- boxplot.stats(data$CustServCalls)$out
+outlier_values_Daymins <- boxplot.stats(data$DayMins)$out
+outlier_values_Daycalls <- boxplot.stats(data$DayCalls)$out
+outlier_values_MonthlyCharge <- boxplot.stats(data$MonthlyCharge)$out
+outlier_values_OverageFee <- boxplot.stats(data$OverageFee)$out
+outlier_values_Roammins <- boxplot.stats(data$RoamMins)$out
+outlier_values_AccountWeeks
+outlier_values_DataUsage
+outlier_values_CustServCalls
+outlier_values_Daymins
+outlier_values_Daycalls
+outlier_values_MonthlyCharge
+outlier_values_OverageFee
+outlier_values_Roammins
+boxplot(data$AccountWeeks, main="Account weeks", boxwex=0.5, horizontal = TRUE)
+mtext(paste("Outliers: ", paste(outlier_values_AccountWeeks, collapse=", ")), cex=0.6)
+boxplot(data$DataUsage, main="Data Usage", boxwex=0.5, horizontal = TRUE)
+mtext(paste("Outliers: ", paste(outlier_values_DataUsage, collapse=", ")), cex=0.6)
+boxplot(data$MonthlyCharge, main="Monthly Charge", boxwex=0.5, horizontal = TRUE)
+mtext(paste("Outliers: ", paste(outlier_values_MonthlyCharge, collapse=", ")), cex=0.6)
+boxplot(data$OverageFee, main="Overage Fee", boxwex=0.5, horizontal = TRUE)
+mtext(paste("Outliers: ", paste(outlier_values_OverageFee, collapse=", ")), cex=0.6)
+#boxplot(data$Roammins, main="Roam Mins", horizontal = TRUE)
+#mtext(paste("Outliers: ", paste(outlier_values_Roammins, collapse=", ")), cex=0.6)
+boxplot(data$CustServCalls, main="Custserv calls", boxwex=0.5, horizontal = TRUE)
+mtext(paste("Outliers: ", paste(outlier_values_CustServCalls, collapse=", ")), cex=0.6)
+boxplot(data$DayMins, main="Day Mins", boxwex=0.5, horizontal = TRUE)
+mtext(paste("Outliers: ", paste(outlier_values_Daymins, collapse=", ")), cex=0.6)
+boxplot(data$DayCalls, main="Day Calls", boxwex=0.5, horizontal = TRUE)
+mtext(paste("Outliers: ", paste(outlier_values_Daycalls, collapse=", ")), cex=0.6)
+```
+
+```{r}
+
+### EDA contd###
+## Check visual association pattern for continous predictor variables
+
+library(GGally)
+library(psych)
+library(corrplot)
+names(data)
+ggpairs(data[, c("AccountWeeks","DataUsage",
+                   "CustServCalls","DayMins",
+                   "DayCalls","MonthlyCharge","OverageFee","RoamMins")],ggplot2::aes(colour = data$Churn))
+
+pairs.panels(data[-c(1,3,4)], gap=0, bg=c("red","green")[data$Churn], pch=21)
+
+## Check for correlation among Independent variables - only continuos variables
+library(corrplot)
+datamatrix = cor(data[-c(1,3,4)])
+corrplot(datamatrix, method ="number",type = "upper",order = "FPC")
+
+## Check for correlation among Independent variables - including the categorical variables
+
+install.packages("DataExplorer")
+library(DataExplorer)
+plot_correlation(data[,-1])
+
+```
+
+```{r}
+
+### EDA contd
+
+names(data)
+# create a subset of numeric data
+num.data <- subset(data, select = c(AccountWeeks,DataUsage,CustServCalls,DayMins,DayCalls,MonthlyCharge,OverageFee,RoamMins))
+
+# create a subset of categorical data
+
+ct.data <- subset(data, select = c(ContractRenewal,DataPlan))
+
+## contingency table of dicotomous variables with target variable
+par(mfrow = c(2,2))
+for(i in names(ct.data)){
+  print(i)
+  print(table(data$Churn,ct.data[[i]]))
+  barplot(table(data$Churn, ct.data[[i]]),
+          col = c("blue","green"),
+          main = names(ct.data[i]))
+  
+}  
+
+## Chi sq test of catergorical data with target variable
+ct.data2 <- cbind(ct.data,data$Churn)
+colnames(ct.data2)[3] <- "Churn"
+str(ct.data2)
+ChiSqStat <- NA
+for ( i in 1 :(ncol(ct.data2))){
+  Statistic <- data.frame(
+    "Row" = colnames(ct.data2[3]),
+    "Column" = colnames(ct.data2[i]),
+    "Chi SQuare" = chisq.test(ct.data2[[3]], ct.data2[[i]])$statistic,
+    "df"= chisq.test(ct.data2[[3]],ct.data2[[i]])$parameter,
+    "p.value" = chisq.test(ct.data2[[3]], ct.data2[[i]])$p.value)
+    ChiSqStat <- rbind(ChiSqStat, Statistic)
+}
+ChiSqStat <- data.table::data.table(ChiSqStat)
+ChiSqStat
+```
+
+  
+```{r}
+  
+ # # run a sample model on categorical variables
+fact.model <- glm(Churn ~., data = ct.data2, family = binomial)
+summary(fact.model)
+
+```  
+  
+```{r}
+### EDA contd
+### Data Visualisation for Continuous variables###
+boxplot(num.data,las = 1,horizontal = TRUE,
+        cex = 0.9,
+        par(cex.axis = 0.8),
+         col=brewer.pal(8,"Set1"), main = "Boxplots of continous variables")
+
+# add the target variable to the numeric data for plotting
+num.data2 <- cbind(num.data, data$Churn)
+colnames(num.data2)[9] <- "Churn"
+
+num.data2$Churn <- as.factor(num.data2$Churn)
+# stack the data using melt function
+nd2.melt <- melt(num.data2, id = c("Churn"))
+
+#  box plots
+
+ggplot(data = nd2.melt, aes(x=Churn, y=value)) + geom_boxplot(aes(color = Churn),alpha =0.7) +facet_wrap(~variable,scales = "free_x", nrow = 3) +  coord_flip()
+
+#density/distrbution plots
+yy <- ggplot(nd2.melt, aes(value, fill=variable))
+yy+geom_density(aes(color = value) ) +
+  facet_wrap(~variable,scales = "free")  
+  
+```  
+  
+```{r}  
+
+### make a logistic regression model on continuous variables
+num.model = glm(Churn~., data = num.data2, family = binomial)
+summary(num.model)
+```
+  
+  
+```{r}
+ ### split the data into Test and Train ###  
+
+library(caTools)
+set.seed(100)
+split = sample.split(data$Churn, SplitRatio = 0.70)
+train = subset(data, split==TRUE)
+test = subset(data, split==FALSE)
+dim(train)
+dim(test)
+summary(test)
+summary(train)
+## Check split consistency
+sum(as.integer(as.character(data$Churn)))/ nrow(data)
+sum(as.integer(as.character(test$Churn))) / nrow(test)
+sum(as.integer(as.character(train$Churn))) / nrow(train)
+
+```
+
+```{r}  
+### Build the Base Logistic Regression Model
+
+LRModel = glm(Churn ~ ., data = train, family = binomial)
+summary(LRModel)
+coef = exp(LRModel$coefficients)
+coef
+
+# check multicollinearity impact on model
+library(car)
+vif(LRModel)
+
+
+# Influential points
+
+plot(LRModel)  # Influential Points
+
+#Outlier detection
+cooksd <- cooks.distance(LRModel)
+
+plot(cooksd, pch="*", cex=1, main="Influential Obs by Cooks distance")  # plot cook's distance
+abline(h = 4*mean(cooksd, na.rm=T), col="red") # add cutoff line
+text(x=1:length(cooksd)+1, y=cooksd, labels=ifelse(cooksd>4*mean(cooksd, na.rm=T),names(cooksd),""), col="red", cex = 0.8)
+
+influential <- as.numeric(names(cooksd)[(cooksd > 4*mean(cooksd, na.rm=T))]) # Find Outliers Values index positions
+
+out = (train[influential, ]) # Filter data for Outliers
+
+View(out) # View Outliers
+
+# Finding Data except outliers
+noout = anti_join(train,out)
+
+summary(noout)
+summary(out)
+
+
+### Fixing outliers - using flooring and ceiling method - capping values at 5 and 95 percentile for independent continuous variables
+
+#Accountweeks
+train$AccountWeeks
+caps <- quantile(train$AccountWeeks, probs=c(.05, .95), na.rm = T)
+capst <- quantile(test$AccountWeeks, probs=c(.05, .95), na.rm = T)
+train$AccountWeeks[train$AccountWeeks<caps[1]] <- caps[1]
+train$AccountWeeks[train$AccountWeeks>caps[2]] <- caps[2]
+test$AccountWeeks[test$AccountWeeks<capst[1]] <- capst[1]
+test$AccountWeeks[test$AccountWeeks>capst[2]] <- capst[2] 
+ #Custservcalls
+quantile(train$CustServCalls, probs = seq(0,1,0.05),na.rm = T)
+quantile(test$CustServCalls, probs = seq(0,1,0.05),na.rm = T)
+train$CustServCalls
+caps <- quantile(train$CustServCalls, probs=c(.05, .95), na.rm = T)
+capst <- quantile(test$CustServCalls, probs=c(.05, .95), na.rm = T)
+train$CustServCalls[train$CustServCalls<caps[1]] <- caps[1]
+train$CustServCalls[train$CustServCalls>caps[2]] <- caps[2]
+test$CustServCalls[test$CustServCalls<capst[1]] <- capst[1]
+test$CustServCalls[test$CustServCalls>capst[2]] <- capst[2]                    
+ #Daymins
+quantile(train$DayMins, probs = seq(0,1,0.05),na.rm = T)
+quantile(test$DayMins, probs = seq(0,1,0.05),na.rm = T)
+caps <- quantile(train$DayMins, probs=c(.05, .95), na.rm = T)
+capst <- quantile(test$DayMins, probs=c(.05, .95), na.rm = T)
+train$DayMins[train$DayMins<caps[1]] <- caps[1]
+train$DayMins[train$DayMins>caps[2]] <- caps[2]
+test$DayMins[test$DayMins<capst[1]] <- capst[1]
+test$DayMins[test$DayMins>capst[2]] <- capst[2]  
+#Daycalls
+quantile(train$DayCalls, probs = seq(0,1,0.05),na.rm = T)
+quantile(test$DayCalls, probs = seq(0,1,0.05),na.rm = T)
+caps <- quantile(train$DayCalls, probs=c(.05, .95), na.rm = T)
+capst <- quantile(test$DayCalls, probs=c(.05, .95), na.rm = T)
+train$DayCalls[train$DayCalls<caps[1]] <- caps[1]
+train$DayCalls[train$DayCalls>caps[2]] <- caps[2]
+test$DayCalls[test$DayCalls<capst[1]] <- capst[1]
+test$DayCalls[test$DayCalls>capst[2]] <- capst[2]  
+
+#Monthly Charge
+quantile(train$MonthlyCharge, probs = seq(0,1,0.05),na.rm = T)
+quantile(test$MonthlyCharge, probs = seq(0,1,0.05),na.rm = T)
+caps <- quantile(train$MonthlyCharge, probs=c(.05, .95), na.rm = T)
+capst <- quantile(test$MonthlyCharge, probs=c(.05, .95), na.rm = T)
+train$MonthlyCharge[train$MonthlyCharge<caps[1]] <- caps[1]
+train$MonthlyCharge[train$MonthlyCharge>caps[2]] <- caps[2]
+test$MonthlyCharge[test$MonthlyCharge<capst[1]] <- capst[1]
+test$MonthlyCharge[test$MonthlyCharge>capst[2]] <- capst[2] 
+
+
+#Overage Fee
+quantile(train$OverageFee, probs = seq(0,1,0.05),na.rm = T)
+quantile(test$OverageFee, probs = seq(0,1,0.05),na.rm = T)
+caps <- quantile(train$OverageFee, probs=c(.05, .95), na.rm = T)
+capst <- quantile(test$OverageFee, probs=c(.05, .95), na.rm = T)
+train$OverageFee[train$OverageFee<caps[1]] <- caps[1]
+train$OverageFee[train$OverageFee>caps[2]] <- caps[2]
+test$OverageFee[test$OverageFee<capst[1]] <- capst[1]
+test$OverageFee[test$OverageFee>capst[2]] <- capst[2] 
+
+#Roam Mins
+quantile(train$RoamMins, probs = seq(0,1,0.05),na.rm = T)
+quantile(test$RoamMins, probs = seq(0,1,0.05),na.rm = T)
+caps <- quantile(train$RoamMins, probs=c(.05, .95), na.rm = T)
+capst <- quantile(test$RoamMins, probs=c(.05, .95), na.rm = T)
+train$RoamMins[train$RoamMins<caps[1]] <- caps[1]
+train$RoamMins[train$RoamMins>caps[2]] <- caps[2]
+test$RoamMins[test$RoamMins<capst[1]] <- capst[1]
+test$RoamMins[test$RoamMins>capst[2]] <- capst[2] 
+
+boxplot(train,horizontal = TRUE )
+
+#Prediction on the Train set
+predict_train_Logit = predict(LRModel,newdata = train, type = "response")
+head(predict_train_Logit)
+
+#Prediction on the Test set
+
+predict_test_Logit = predict(LRModel,newdata = test, type = "response")
+head(predict_test_Logit)
+
+
+## Check for the linearity assumption - check the linear relationship between continuous predictor variables and the logit of the outcome.
+
+view(train)
+predictors <- colnames(train[,-1])
+# Bind the logit and tidying the data for plot
+mydata <- train %>%
+  mutate(logit = log(predict_train_Logit/(1-predict_train_Logit))) %>%
+  gather(key = "predictors", value = "predictor.value", -logit)
+view(mydata)
+ggplot(mydata, aes(logit, predictor.value))+
+  geom_point(size = 0.5, alpha = 0.5) +
+  geom_smooth(method = "loess") + 
+  theme_bw() + 
+  facet_wrap(~predictors, scales = "free_y")
+
+
+# Confusion matrix with threshold of 0.5
+tab = table(test$Churn, predict_test_Logit>0.5)
+sum(diag(tab))/nrow(test)
+
+# Test set AUC
+library(ROCR)
+ROCRpred = prediction(predict_test_Logit,test$Churn)
+perf <- performance(ROCRpred, "tpr", "fpr")
+plot(perf, colorize = TRUE, print.cutoffs.at = seq(0,1,0.05), text.adj = c(-0.2, 1.7))
+as.numeric(performance(ROCRpred, "auc")@y.values)
+
+```
+
+```{r}
+### Identifying the best fit Logistic Regression Model
+
+library(blorr)
+blr_step_aic_forward(LRModel, details = TRUE)
+blr_step_aic_both(LRModel, details = TRUE)
+final.model <- glm(Churn~DayMins+CustServCalls+ContractRenewal+DataPlan+OverageFee+RoamMins+DayCalls, data = train, family = binomial)
+summary(final.model)
+plot(final.model)
+vif(final.model)
+coef <- exp(final.model$coefficients)
+coef
+
+1.012779806 / (1.012779806 + 1)
+
+#Prediction on the Train set - final model
+predict_train_Logit_final = predict(final.model,newdata = train, type = "response")
+head(predict_train_Logit_final)
+
+#Evaluation Measures on the Train set - final model
+
+# Confusion matrix with threshold of 0.13
+tab_train_logit_final = table(predict_train_Logit_final>0.13,train$Churn)
+sum(diag(tab_train_logit_final))/nrow(train)
+
+sensitivity_train_logit_final = tab_train_logit_final[2,2]/(tab_train_logit_final[2,2] + tab_train_logit_final[1,2])
+specificity_train_logit_final = tab_train_logit_final[1,1]/(tab_train_logit_final[1,1] + tab_train_logit_final[2,1])
+accuracy_train_logit_final = ((tab_train_logit_final[1,1]+tab_train_logit_final[2,2]))/nrow(train)
+Error_Train_logit_final = 1-accuracy_train_logit_final
+
+logit.f_train_key = c(accuracy_train_logit_final,Error_Train_logit_final,sensitivity_train_logit_final,specificity_train_logit_final)
+
+blr_confusion_matrix(final.model,data = train, cutoff = 0.13)
+blr_gini_index(final.model, data = train)
+gains_table_train = blr_gains_table(final.model, data = train)
+
+blr_ks_chart(
+  gains_table_train,
+  title = "KS Chart",
+  yaxis_title = " ",
+  xaxis_title = "Cumulative Population %",
+  ks_line_color = "black"
+)
+
+library(ROCR)
+ROCRpred_train_logit_final = prediction(predict_train_Logit_final,train$Churn)
+perf_train_final_logit <- performance(ROCRpred_train_logit_final, "tpr", "fpr")
+plot(perf_train_final_logit, colorize = TRUE, print.cutoffs.at = seq(0,1,0.05), text.adj = c(-0.2, 1.7))
+as.numeric(performance(ROCRpred_train_logit_final, "auc")@y.values)
+
+#Prediction on the Test set - final model
+
+predict_test_Logit_final = predict(final.model,newdata = test, type = "response")
+head(predict_test_Logit_final)
+blr_confusion_matrix(final.model, data = test,cutoff = 0.13)
+
+blr_gini_index(final.model, data = test)
+
+
+#Evaluation Measures on the Test data set - final model
+
+# Confusion matrix with threshold of 0.13
+tab_test_final = table(test$Churn, predict_test_Logit_final>0.13)
+sum(diag(tab_test_final))/nrow(test)
+
+# Test set AUC
+library(ROCR)
+ROCRpred_test_logit_final = prediction(predict_test_Logit_final,test$Churn)
+perf_test_final_logit <- performance(ROCRpred_test_logit_final, "tpr", "fpr")
+plot(perf_test_final_logit, colorize = TRUE, print.cutoffs.at = seq(0,1,0.05), text.adj = c(-0.2, 1.7))
+as.numeric(performance(ROCRpred_test_logit_final, "auc")@y.values)
+
+#Test set KS
+
+gains_table_test = blr_gains_table(final.model, data = test)
+
+blr_ks_chart(
+  gains_table_test,
+  title = "KS Chart",
+  yaxis_title = " ",
+  xaxis_title = "Cumulative Population %",
+  ks_line_color = "black"
+)
+
+```
+
+
+
+```{r}
+
+#plots and evaluation measures for logistic regression
+library(blorr)
+k <- blr_gains_table(final.model)
+plot(k)
+
+blr_decile_lift_chart(k, xaxis_title = "Decile",
+                      yaxis_title = "Decile Mean / Global Mean",
+                      title = "Decile Lift Chart",
+                      bar_color = "blue", text_size = 3.5,
+                      text_vjust = -0.3)
+
+blr_decile_capture_rate(k, xaxis_title = "Decile",
+                        yaxis_title = "Capture Rate",
+                        title = "Capture Rate by Decile",
+                        bar_color = "blue", text_size = 3.5,
+                        text_vjust =-0.3)
+
+blr_roc_curve(k, title = "ROC Curve",
+              xaxis_title = "1 - Specificity",
+              yaxis_title = "Sensitivity",roc_curve_col = "blue",
+              diag_line_col = "red", point_shape = 18,
+              point_fill = "blue", point_color = "blue",
+              plot_title_justify = 0.5)  
+
+blr_rsq_mcfadden(final.model)
+
+blr_rsq_mcfadden_adj(final.model)
+
+
+blr_plot_difchisq_fitted(final.model, point_color = "blue",
+                         title = "Delta Chi Square vs Fitted Values Plot",
+                         xaxis_title = "Fitted Values",
+                         yaxis_title = "Delta Chi Square")
+
+
+
+```
+
+```{r}
+###KNN Model     
+train -> train2
+train2
+str(train2)
+view(train2)
+test -> test2
+
+names = c(1,3,4)
+
+# Change class to numeric for categorical variables
+train2$ContractRenewal = as.numeric(train2$ContractRenewal)
+train2$DataPlan = as.numeric(train2$DataPlan)
+test2$ContractRenewal = as.numeric(test2$ContractRenewal)
+test2$DataPlan = as.numeric(test2$DataPlan)
+
+#Normalise the continous variables
+norm = function(x){ (x - min(x))/(max(x)- min(x))}
+norm.train = as.data.frame(lapply(train2[,-c(1,3,4)],norm))
+norm.test = as.data.frame(lapply(test2[,-c(1,3,4)],norm))
+norm.train.2 = cbind(train2[,c(1,3,4)],norm.train)
+norm.test.2 = cbind(test2[,c(1,3,4)],norm.test)
+
+#KNN model
+library(class)
+help(class)
+pred.knn = knn(norm.train.2[-1], norm.test.2[-1], norm.train.2[,1], k = 13) 
+summary(pred.knn)
+
+#KNN train evaluation measures
+pred.knn.train = knn(norm.train.2[-1], norm.train.2[-1], norm.train.2[,1], k = 13) 
+
+table.knn_train= table(pred.knn.train,norm.train.2[,1])
+Accuracy.knn.train = sum(diag(table.knn_train)/sum(table.knn_train))
+sensitivity_train_knn = table.knn_train[2,2]/(table.knn_train[2,2] + table.knn_train[1,2])
+specificity_train_knn = table.knn_train[1,1]/(table.knn_train[1,1] + table.knn_train[2,1])
+accuracy_train_knn = ((table.knn_train[1,1]+table.knn_train[2,2])/nrow(norm.train.2))
+Error_train_knn = 1-accuracy_train_knn
+
+knn_train_key = c(Accuracy.knn.train,Error_train_knn,sensitivity_train_knn,specificity_train_knn)
+
+#KNN test evaluation measures
+table.knn_test= table(pred.knn,norm.test.2[,1])
+Accuracy.knn.test = sum(diag(table.knn_test)/sum(table.knn_test))
+sensitivity_test_knn = table.knn_test[2,2]/(table.knn_test[2,2] + table.knn_test[1,2])
+specificity_test_knn = table.knn_test[1,1]/(table.knn_test[1,1] + table.knn_test[2,1])
+accuracy_test_knn = ((table.knn_test[1,1]+table.knn_test[2,2])/1000)
+Error_test_knn = 1-accuracy_test_knn
+
+knn_test_key = c(Accuracy.knn.test,Error_test_knn,sensitivity_test_knn,specificity_test_knn)
+
+```
+
+```{r}
+###Naive Baiyes##
+train2 = train
+test2 = test
+str(train2)
+
+# convert the numeric variables to catagorical
+names = c(2,5,6,7,8,9,10,11)
+train2[,names] = lapply(train2[,names], factor)
+test2[,names] = lapply(test2[,names], factor)
+
+library(e1071)
+NB = naiveBayes(Churn ~., data = train2)
+summary(NB)
+predNB.train = predict(NB, train2, type = "class")
+predNB = predict(NB, test2, type = "class")
+head(predNB)
+tab.NB.train = table( predNB.train,train$Churn)
+tab.NB = table(predNB,test$Churn)
+sum(diag(tab.NB)/sum(tab.NB))
+sum(diag(tab.NB.train)/sum(tab.NB.train))
+
+# Evaluation measures Train
+sensitivity_train_nb = tab.NB.train[2,2]/(tab.NB.train[2,2] + tab.NB.train[1,2])
+specificity_train_nb = tab.NB.train[1,1]/(tab.NB.train[1,1] + tab.NB.train[2,1])
+accuracy_train_nb = ((tab.NB.train[1,1]+tab.NB.train[2,2]))/nrow(train)
+Error_Train_nb = 1-accuracy_train_nb
+
+# Evaluation measures Test
+
+sensitivity_test_nb = tab.NB[2,2]/(tab.NB[2,2] + tab.NB[1,2])
+specificity_test_nb = tab.NB[1,1]/(tab.NB[1,1] + tab.NB[2,1])
+accuracy_test_nb = ((tab.NB[1,1]+tab.NB[2,2]))/nrow(test)
+Error_Test_nb = 1-accuracy_test_nb
+```

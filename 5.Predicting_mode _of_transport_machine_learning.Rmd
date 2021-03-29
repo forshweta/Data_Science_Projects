@@ -1,0 +1,538 @@
+---
+title: "Untitled"
+author: "shweta"
+date: "17/06/2020"
+output: word_document
+---
+```{r}
+# Load the data 
+full = read.csv("/Users/shweta/Desktop/PGPBABI/MACHINE LEARNING/PROJECT/Cars_edited.csv")
+dim(full)
+str(full)
+
+# Check for missing values
+anyNA(full)
+colSums(is.na(full))
+sapply(full,function(x) sum(is.na(x)))
+
+# Check the dependent variable distribution
+length(which(full$Transport == "Car"))/nrow(full)
+prop.table(table(full$Transport))
+
+#Check for outliers
+boxplot(full[-c(2,3,4,8,9)], boxwex = 0.5, cex = 0.9,cex.axis = 0.9,horizontal = TRUE,main = "Boxplot of all Continuos variables", las = 1, col = c("blue","red","green","yellow"))
+
+#Change the class of categorical variables
+names = c(3,4,8)
+full[,names] = lapply(full[,names], factor)
+
+#Summary
+summary(full)
+
+#Recode the Transport variable as BINARY
+
+full$Transport2 <- ifelse(full$Transport == "Car", "1",
+                          ifelse(full$Transport == "2Wheeler", "0", 0))
+prop.table(table(full$Transport2))
+
+#Combine MBA and Engineer as one variable - Education
+
+length(which(full$Engineer == "1" & full$MBA == "1"))
+
+
+full$education <- ifelse(full$Engineer == "1" & full$MBA == "1", "3", 
+                         ifelse(full$Engineer == "1" & full$MBA == "0", "1", 2))
+                         
+prop.table(table(full$education)) 
+table(full$education)
+269/43
+````
+
+```{r}
+
+#OUTLIER TREATMENT
+#Identifying the outlier boundaries - Age
+IQRAge = IQR(full$Age)
+LLage = quantile(full$Age,0.25) - 1.5*IQRAge
+ULage = quantile(full$Age,0.75) + 1.5*IQRAge
+ageOut = subset(full, Age < LLage | Age > ULage)
+dim(ageOut)
+
+
+#Identifying the outlier boundaries - Work Experience
+IQRworkexp = IQR(full$Work.Exp)
+LLwexp = quantile(full$Work.Exp,0.25) - 1.5*IQRworkexp
+ULwexp = quantile(full$Work.Exp,0.75) + 1.5*IQRworkexp
+wexpOut = subset(full, Work.Exp < LLwexp | Work.Exp > ULwexp)
+dim(wexpOut)
+
+#Identifying the outlier boundaries - Salary
+IQRsalary = IQR(full$Salary)
+LLsal = quantile(full$Salary,0.25) - 1.5*IQRsalary
+ULsal = quantile(full$Salary,0.75) + 1.5*IQRsalary
+salout = subset(full, Salary < LLsal | Salary > ULsal)
+dim(salout)
+
+#Identifying the outlier boundaries - Distance
+IQRdist = IQR(full$Distance)
+LLdist = quantile(full$Distance,0.25) - 1.5*IQRdist
+ULdist = quantile(full$Distance,0.75) + 1.5*IQRdist
+distout = subset(full, Distance < LLdist | Distance > ULdist)
+dim(distout)
+
+
+# Treatment of  Outliers - Impute the outlier values
+
+full$Age[full$Age < LLage | full$Age > ULage] = NA
+full$Work.Exp[full$Work.Exp < LLwexp | full$Work.Exp > ULwexp] = NA
+full$Distance[full$Distance < LLdist | full$Distance > ULdist] = NA
+full$Salary[full$Salary < LLsal | full$Salary > ULsal] = NA
+
+
+sum(is.na(full))
+library(mice)
+md.pattern(full)
+mymice = mice(full, m = 5, method = "pmm")
+mymice$imp$Age
+mymiceComplete = complete(mymice, 3)
+summary(mymiceComplete) 
+full2 = mymiceComplete
+str(full2)
+full2$Transport2 = as.factor(full$Transport2)
+full2$education = as.factor(full$education)
+
+boxplot(full2[,-c(2,3,4,8,9,10,11)])
+colSums(is.na(full2))
+```
+
+
+```{r}
+
+#EDA
+
+library(dplyr)
+full3 = full2 %>% select(-"Transport",-"Engineer",-"MBA")
+str(full3)
+summary(full3)
+
+## Check for correlation among Independent variables - including the categorical variables
+library(DataExplorer)
+plot_correlation(full3[,-7])
+
+library(corrplot)
+cormat = cor(full3[,-c(2,6,7,8)])
+corrplot(cormat, method = "number", type = "upper", diag = F,order = "FPC")
+```
+
+```{r}
+# EDA
+# continuous variables
+library(ggplot2)
+library(RColorBrewer)
+library(GGally)
+library(psych)
+boxplot(full3[-c(2,6,7,8)],las = 1,horizontal = TRUE,
+        cex = 0.6,
+        par(cex.axis = 0.8),
+         col=brewer.pal(8,"Set1"), main = "Boxplots of continous variables")
+
+pairs.panels(full3[-c(2,6,7,8)], gap=0, bg=c("red","green")[full3$Transport2], pch=21)
+
+ggpairs(full3[, -c(2,6,7,8)],ggplot2::aes(colour = full3$Transport2))
+
+
+# create a dataset of numeric variables and dependent variable
+str(full3)
+library(reshape2)
+newdata = full3 %>% select("Age","Work.Exp","Salary","Distance","Transport2")
+newdata2 = melt(newdata, id = c("Transport2"))
+View(newdata2)
+
+#  box plots
+
+ggplot(data = newdata2, aes(x=Transport2, y=value)) + geom_boxplot(aes(color = Transport2),alpha =0.7) +facet_wrap(~variable,scales = "free_x", nrow = 3) +  coord_flip()
+
+#density/distrbution plots
+yy <- ggplot(newdata2, aes(value, fill=variable))
+yy+geom_density(aes(color = value) ) +
+  facet_wrap(~variable,scales = "free")  
+
+```
+
+```{r}
+#EDA categorical variables
+
+# create a subset of categorical data
+
+colnames(full3[,sapply(full3, is.factor)])
+ct.data <- subset(full3, select = c(education,license,Gender))
+
+## contingency table of dicotomous variables with target variable
+par(mfrow = c(2,2))
+for(i in names(ct.data)){
+  print(i)
+  print(table(full3$Transport2,ct.data[[i]]))
+  barplot(table(full3$Transport2, ct.data[[i]]),
+          col = c("blue","green"),
+          main = names(ct.data[i]))
+  
+}  
+
+## Chi sq test of catergorical data with target variable
+ct.data2 <- cbind(ct.data,full3$Transport2)
+colnames(ct.data2)[4] <- "Transport"
+str(ct.data2)
+ChiSqStat <- NA
+for ( i in 1 :(ncol(ct.data2))){
+  Statistic <- data.frame(
+    "Row" = colnames(ct.data2[4]),
+    "Column" = colnames(ct.data2[i]),
+    "Chi SQuare" = chisq.test(ct.data2[[4]], ct.data2[[i]])$statistic,
+    "df"= chisq.test(ct.data2[[4]],ct.data2[[i]])$parameter,
+    "p.value" = chisq.test(ct.data2[[4]], ct.data2[[i]])$p.value)
+    ChiSqStat <- rbind(ChiSqStat, Statistic)
+}
+ChiSqStat <- data.table::data.table(ChiSqStat)
+ChiSqStat
+```
+
+```{r}
+#Treat multicollinearity using PCA
+
+#install.packages("psych")
+library(psych)
+
+cortest.bartlett(cormat) # check whether the corrlatation matrix is identity matrix( diag 1 and other values o), if it is not then their is scope for dimensionality reduction
+
+KMO(cormat) # check for sampling adequacy for doing PCA
+
+# Treating multicollinearity in Data using PCA
+
+A = eigen(cormat)
+ev = A$values
+ev
+
+plot(ev, xlab = "Factors", ylab="Eigen Value", pch=20, col="blue")
+lines(ev, col="red")
+eFactors = fa(full3[,-c(2,6,7,8)], nfactors=2, rotate="none", fm = "minres")
+eFactors
+fa.diagram(eFactors)
+attributes(eFactors)
+
+#Create a final dataset using PCA factor and other relevant variables
+str(full2)
+str(full3)
+full4 = full3 %>% select(-"Age",-"Work.Exp",-"Salary")
+full5 = cbind(full4, SEC = eFactors$scores[,1])
+head(full5)
+dim(full5)
+str(full5)
+
+```
+
+```{r}
+
+#Data partitioning
+#Data partitioning  with new variables
+set.seed(42)
+library(caret)
+index = createDataPartition(full5$Transport2, p= 0.7, list = FALSE)
+train = full5[index,]
+test = full5[-index,]
+dim(full5)
+dim(test)
+dim(train)
+prop.table(table(train$Transport2))
+table(train$Transport2)
+prop.table(table(test$Transport2))
+str(full5)
+
+#Data partitioning with old variables
+str(full2)
+datawo_newvars = full2 %>% select(-c("Transport","education"))
+index = createDataPartition(datawo_newvars$Transport2, p= 0.7, list = FALSE)
+train2 = datawo_newvars[index,]
+test2 = datawo_newvars[-index,]
+dim(test2)
+dim(train2)
+prop.table(table(train2$Transport2))
+table(train2$Transport2)
+prop.table(table(test2$Transport2))
+```
+
+```{r}
+    
+#Data Preperation  - SMOTE
+library(DMwR)
+train.new <- SMOTE(Transport2 ~., perc.over = 300, train, k = 15,perc.under = 189)
+table(train.new$Transport2)
+str(train.new)
+
+```
+
+```{r}
+
+### Model Building - Logistic Regression
+
+library(caret)
+
+#control = trainControl(method = "repeatedcv",number = 10, repeats = 10)
+
+#model_Logreg = caret::train(as.factor(Transport2) ~., data = train2,method = "glm",family = binomial, trControl = control)
+#model_Logreg2 = caret::train(as.factor(Transport2) ~., data = train.new,method = "glm",family = binomial, trControl = control)
+#summary(model_Logreg)
+#summary(model_Logreg2)
+str(train2)
+
+library(car)
+LR.base = glm( Transport2 ~., data = train2, family = binomial)
+summary(LR.base)
+vif(LR.base)
+LR.smote = glm( Transport2 ~., data = train.new, family = binomial)
+summary(LR.smote)
+vif(LR.smote)
+
+# Pseudo R-square
+library(pscl)
+pR2(LR.smote)
+pR2(LR.base)
+library(blorr)
+both <- blr_step_aic_both(LR.smote, details = TRUE)
+summary(both)  
+final_LR = glm(Transport2 ~ license+SEC+Distance, data = train.new,family = binomial)
+summary(final_LR)
+vif(final_LR)
+pR2(final_LR)
+
+```
+
+
+```{r}
+# Odds Ratio
+exp(coef(final_LR))
+
+# Probability
+exp(coef(final_LR))/(1+exp(coef(final_LR)))
+
+# Performance metrics (in-sample)
+pred = predict(final_LR, data=train.new, type="response")
+y_pred_num = ifelse(pred>0.5,1,0)
+y_pred = factor(y_pred_num, levels=c(0,1))
+y_actual = train.new$Transport2
+confusionMatrix(y_pred,y_actual,positive="1")
+
+
+# ROC plot
+library(ROCR)
+ROCRpred = prediction(pred,train.new$Transport2)
+perf <- performance(ROCRpred, "tpr", "fpr")
+plot(perf, colorize = TRUE, print.cutoffs.at = seq(0,1,0.05), text.adj = c(-0.4, 0.4))
+# AUC
+as.numeric(performance(ROCRpred, "auc")@y.values)
+#AUC
+train.auc = performance(ROCRpred, "auc")
+train.area = as.numeric(slot(train.auc, "y.values"))
+train.area
+# KS
+ks.train <- performance(ROCRpred, "tpr", "fpr")
+train.ks <- max(attr(ks.train, "y.values")[[1]] - (attr(ks.train, "x.values")[[1]]))
+train.ks
+
+# Gini
+train.gini = (2 * train.area) - 1
+train.gini
+
+# Calibrating thresold levels to increase sensitivity
+pred = predict(final_LR, data=train.new, type="response")
+y_pred_num = ifelse(pred>0.5,1,0)
+y_pred = factor(y_pred_num, levels=c(0,1))
+y_actual = train.new$Transport2
+confusionMatrix(y_pred,y_actual,positive="1")
+
+# Performance metrics (out-of-the-sample)
+pred = predict(final_LR, newdata=test, type="response")
+y_pred_num = ifelse(pred>0.5,1,0)
+y_pred = factor(y_pred_num, levels=c(0,1))
+y_actual = test$Transport2
+confusionMatrix(y_pred,y_actual,positive="1")
+162/(162+10)
+214/(214+29)
+```
+
+```{r}
+### Model Building - KNN
+
+#train.num = train.new[,sapply(train.new, is.numeric)]
+#colnames(train.new[,sapply(train.new, is.numeric)]) 
+#train.norm.data = train.norm.data(lapply(, is.numeric))
+str(train.new)
+# Normalize variables
+test.new = test[,-7]
+scale = preProcess(train.new, method = "range")
+scale2 = preProcess(test, method = "range")
+
+
+str(test.new)
+train.norm.data = predict(scale, train.new)
+test.norm.data = predict(scale, test)
+head(train.norm.data)
+
+knn_fit = train(Transport2 ~., data = train.norm.data, method = "knn",
+                 trControl = trainControl(method = "cv", number = 3),
+                 tuneLength = 10)
+
+knn_fit$bestTune$k
+
+str(train.norm.data)
+
+# Performance metrics (in-sample)
+pred = predict(knn_fit, data = train.norm.data[-4], type = "raw")
+pred
+confusionMatrix(pred,train.norm.data$Transport2,positive="1")
+
+# Performance metrics (out-of-the-sample)
+pred = predict(knn_fit, newdata = test.norm.data[-4], type = "raw")
+confusionMatrix(pred,test.norm.data$Transport2,positive="1")
+
+
+```
+
+
+
+
+```{r}
+
+### Model Building - NB
+
+library(e1071)
+
+str(train.norm.data)
+NB = naiveBayes(x=train.norm.data[-c(4)], y=train.norm.data$Transport2)
+#NBmodel = naiveBayes(Transport2 ~., data = train.norm.data)
+summary(NB)
+# Performance metrics (in-sample)
+pred = predict(NB, newdata = train.norm.data[,-4])
+#NBpredTest = predict(NB, newdata = train.norm.data)
+confusionMatrix(pred, train.norm.data$Transport2,positive="1")
+
+# Performance metrics (out-of-the-sample)
+pred = predict(NB, newdata = test.norm.data[,-4])
+confusionMatrix(pred,test.norm.data$Transport2,positive="1")
+
+```
+
+```{r}
+
+### Model Building - Bagging
+library(ipred)
+library(rpart)
+library(gbm) 
+library(xgboost)
+
+bagging.car <- bagging(Transport2 ~.,
+                           data=train.new,
+                           control=rpart.control(maxdepth=5, minsplit=4))
+summary(bagging.car)
+train.new$pred.transport <- predict(bagging.car,newdata = train.new)
+confusionMatrix(data=factor(train.new$pred.transport),
+             reference=factor(train.new$Transport2), positive='1')
+str(test)
+
+test$pred.transport <- predict(bagging.car,newdata = test)
+
+confusionMatrix(data=factor(test$pred.transport),
+             reference=factor(test$Transport2), positive='1')
+
+
+```
+
+
+
+
+
+```{r}
+
+### Model Building - Boosting
+ ##XGBoost works with matrices that contain all numeric variables
+# we also need to split the training data and label
+
+str(train.new)
+train.new()
+train3 <- data.frame(lapply(train.new, function(x) as.numeric(as.character(x))))
+test3 <- data.frame(lapply(test, function(x) as.numeric(as.character(x))))
+str(train3)
+train3$Transport2 = as.factor(train3$Transport2)
+
+
+gd_features_train<-as.matrix(train3[,c(1:3,5,6)])
+gd_label_train<-as.matrix(train3[,4])
+gd_features_test<-as.matrix(test3[,c(1:3,5,6)])
+
+xgb.fit <- xgboost(
+  data = gd_features_train,
+  label = gd_label_train,
+  eta = 0.001,
+  max_depth = 3,
+  min_child_weight = 3,
+  nrounds = 10,
+  nfold = 5,
+  objective = "binary:logistic",  # for regression models
+  verbose = 0,               # silent,
+  early_stopping_rounds = 10 # stop if no improvement for 10 consecutive trees
+)
+
+
+xgb.pred.transport <- predict(xgb.fit, gd_features_train)
+
+y_pred_num = ifelse(xgb.pred.transport>0.5,1,0)
+y_pred = factor(y_pred_num, levels=c(0,1))
+y_actual = train.new$Transport2
+confusionMatrix(y_pred,y_actual,positive="1")
+
+tabXGB = table(train.new$Transport2, xgb.pred.transport>0.5)
+tabXGB
+sum(diag(tabXGB))/sum(tabXGB)
+
+xgb.pred.transport.test <- predict(xgb.fit, gd_features_test)
+y_pred_num = ifelse(xgb.pred.transport.test>0.5,1,0)
+y_pred = factor(y_pred_num, levels=c(0,1))
+y_actual = test$Transport2
+confusionMatrix(y_pred,y_actual,positive="1")
+tabXGB_test = table(test$Transport2, xgb.pred.transport.test>0.5)
+tabXGB_test
+sum(diag(tabXGB_test))/sum(tabXGB_test)
+
+
+```
+
+
+```{r}
+#Tuning XGBoost
+
+tp_xgb<-vector()
+lr <- c(0.001, 0.01, 0.1, 0.3, 0.5, 0.7, 1)
+md<-c(1,3,5,7,9,15)
+nr<-c(2, 50, 100, 1000, 10000)
+for (i in md) {
+
+xgb.fit <- xgboost(
+  data = gd_features_train,
+  label = gd_label_train,
+  eta = 1,
+  max_depth = 1,
+  nrounds = 2,
+  nfold = 5,
+  objective = "binary:logistic", 
+  verbose = 0,               
+  early_stopping_rounds = 10 
+)
+
+test$xgb.pred.transport <- predict(xgb.fit, gd_features_test)
+
+tp_xgb<-cbind(tp_xgb,sum(test$Transport2 == 1 & test$xgb.pred.transport>=0.5))
+
+}
+
+tp_xgb
+
+```
